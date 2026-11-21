@@ -1,0 +1,32 @@
+# =============================================================================
+# Optional x86_64 Linux Helper Image for Step 5 (Hailo-8 INT8 .hef Compilation)
+#
+# Prerequisites:
+#   Download and load the official Hailo AI SW Suite Docker image (x86_64) from
+#   the Hailo Developer Zone (https://hailo.ai/developer-zone/software-downloads/),
+#   then pass its tag via `--build-arg BASE_IMAGE=<loaded_image_tag>`.
+#
+# Example build:
+#   docker build -f ml_pipeline/docker/Dockerfile.hailo_dfc \
+#     --build-arg BASE_IMAGE=hailo_ai_sw_suite:2025-01 \
+#     -t sl-storm-hailo-dfc:latest ml_pipeline
+# =============================================================================
+
+ARG BASE_IMAGE=hailo_ai_sw_suite:latest
+FROM --platform=linux/amd64 ${BASE_IMAGE}
+
+LABEL org.opencontainers.image.title="Sri Lanka Storm YOLOv8s-seg Hailo-8 DFC Compiler"
+LABEL org.opencontainers.image.description="Compiles Himawari-9 YOLOv8s-seg ONNX/PT into INT8 Hailo-8 .hef"
+
+WORKDIR /workspace/ml_pipeline
+
+# Install lightweight pipeline helpers into the active Hailo virtualenv without
+# overriding Hailo's pinned numpy/tensorflow/hailo_sdk_client dependencies.
+RUN python3 -m pip install --no-cache-dir \
+    PyYAML>=6.0.1 \
+    onnx>=1.16.0 \
+    onnxslim>=0.1.34 \
+    ultralytics>=8.3.0 --no-deps || true
+
+ENTRYPOINT ["python3", "/workspace/ml_pipeline/5_compile_hailo8.py"]
+CMD ["--config", "/workspace/ml_pipeline/config.yaml", "--mode", "auto"]

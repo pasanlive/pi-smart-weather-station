@@ -1,0 +1,132 @@
+# =============================================================================
+# Himawari-9 Band 13 IR Storm Segmentation ML Pipeline Configuration
+# Target Edge Hardware: Raspberry Pi 5 + Hailo-8 (26 TOPS)
+# =============================================================================
+
+region:
+  name: "Sri Lanka & Surrounding Indian Ocean"
+  # [min_lon, min_lat, max_lon, max_lat] in EPSG:4326 (WMS 1.1.1 order)
+  bbox: [75.0, 3.0, 86.0, 12.0]
+  crs: "EPSG:4326"
+  image_size: 640
+
+paths:
+  work_dir: "work"
+  raw_frames_dir: "work/raw_frames"
+  autolabel_dir: "work/autolabeled"
+  dataset_dir: "work/dataset"
+  calibration_dir: "work/calibration"
+  runs_dir: "work/runs"
+  compiled_dir: "work/compiled"
+  # Matches MODEL_HEF_PATH=./models/storm_yolov8s_seg.hef in repo .env.example
+  deploy_hef_path: "../models/storm_yolov8s_seg.hef"
+
+harvest:
+  wms_url: "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi"
+  wms_version: "1.1.1"
+  layer: "Himawari_AHI_Band13_Clean_Infrared"
+  image_format: "image/png"
+  # Leave null to automatically harvest the past `default_lookback_days` ending yesterday UTC,
+  # or pin explicit ISO dates (e.g. "2025-10-01" / "2025-12-31").
+  start_date: null
+  end_date: null
+  default_lookback_days: 60
+  step_hours: 2
+  max_frames: 600
+  concurrency: 8
+  timeout_sec: 30.0
+  max_retries: 3
+  retry_backoff_sec: 1.5
+  # Quality / corruption filters
+  min_file_bytes: 4096
+  min_pixel_std: 3.0
+  black_pixel_threshold: 5
+  max_black_ratio: 0.95
+  max_transparent_ratio: 0.95
+
+autolabel:
+  seed: 42
+  # Mutually exclusive brightness-temperature proxy bands (0-255 grayscale IR)
+  classes:
+    0:
+      name: "deep_convective"
+      min_intensity: 215
+      max_intensity: 255
+      min_area_px: 120
+      qa_color_bgr: [40, 60, 255]
+    1:
+      name: "storm_shield"
+      min_intensity: 165
+      max_intensity: 214
+      min_area_px: 400
+      qa_color_bgr: [255, 210, 40]
+  morph_open_kernel: 3
+  morph_close_kernel: 5
+  approx_eps_ratio: 0.005
+  min_polygon_points: 3
+  # Keep ~10% of the final retained dataset as clear-sky (empty label) frames
+  negative_keep_ratio: 0.10
+  qa_grid_samples: 16
+
+dataset:
+  seed: 42
+  train_ratio: 0.80
+  # Group frames into temporal blocks so adjacent storm snapshots never leak across train/val
+  temporal_block_hours: 24
+  # Minimum UTC separation (hours) enforced across any train <-> val boundary
+  min_temporal_gap_hours: 4.0
+  # In-domain INT8 calibration set size (Hailo-8 recommends 128-256 representative frames)
+  calib_num_frames: 256
+  calib_min_frames: 128
+
+training:
+  model: "yolov8s-seg.pt"
+  run_name: "storm_yolov8s_seg"
+  imgsz: 640
+  epochs: 80
+  batch: 16
+  patience: 20
+  device: "auto" # auto | cpu | mps | 0
+  workers: 4
+  seed: 42
+  optimizer: "auto"
+  lr0: 0.01
+  # Physically safe augmentations for geostationary Band 13 IR brightness-temperature imagery
+  augmentations:
+    hsv_h: 0.0
+    hsv_s: 0.0
+    hsv_v: 0.10
+    degrees: 0.0
+    translate: 0.05
+    scale: 0.20
+    fliplr: 0.0
+    flipud: 0.0
+    mosaic: 0.50
+    mixup: 0.0
+
+hailo:
+  hw_arch: "hailo8"
+  # auto (Ultralytics native -> DFC fallback) | ultralytics | dfc | onnx-only
+  mode: "auto"
+  net_name: "storm_yolov8s_seg"
+  output_hef_name: "storm_yolov8s_seg.hef"
+  opset: 12
+  simplify_onnx: true
+  # Embedded hardware normalization: scales uint8 [0..255] -> float [0.0..1.0] on Hailo-8
+  normalization_mean: [0.0, 0.0, 0.0]
+  normalization_std: [255.0, 255.0, 255.0]
+  optimization_level: 2
+  compression_level: 1
+  compiler_optimization_level: "max"
+  # Standard Hailo Model Zoo YOLOv8s-seg 10-output split (P3/P4/P5 box/cls/mask + proto)
+  end_node_names:
+    - "/model.22/cv2.0/cv2.0.2/Conv"
+    - "/model.22/cv3.0/cv3.0.2/Conv"
+    - "/model.22/cv4.0/cv4.0.2/Conv"
+    - "/model.22/cv2.1/cv2.1.2/Conv"
+    - "/model.22/cv3.1/cv3.1.2/Conv"
+    - "/model.22/cv4.1/cv4.1.2/Conv"
+    - "/model.22/cv2.2/cv2.2.2/Conv"
+    - "/model.22/cv3.2/cv3.2.2/Conv"
+    - "/model.22/cv4.2/cv4.2.2/Conv"
+    - "/model.22/proto/cv3/act/Mul"
