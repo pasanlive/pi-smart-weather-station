@@ -1,0 +1,87 @@
+{
+  "sample_id": "20261121T182500Z_low_conf",
+  "frame_timestamp": "2026-11-21T18:25:00Z",
+  "captured_at": "2026-11-21T18:55:29.881640+00:00",
+  "trigger_type": "low_conf",
+  "trigger_detail": "Low Conf: 0.38",
+  "all_triggers": [
+    "low_conf"
+  ],
+  "status": "approved",
+  "model_filename": "storm_yolov8s_seg.hef",
+  "inference_backend": "hailo-8",
+  "pseudo_label_source": "model_raw",
+  "confidences": [
+    0.38,
+    0.47
+  ],
+  "min_confidence": 0.38,
+  "max_confidence": 0.47,
+  "detection_count": 2,
+  "low_conf_cells": [
+    {
+      "cell_id": "hailo_1",
+      "label": "deep_convective",
+      "confidence": 0.38
+    },
+    {
+      "cell_id": "hailo_2",
+      "label": "cyclonic_band",
+      "confidence": 0.47
+    }
+  ],
+  "mismatched_basins": [],
+  "boundary_cells": [],
+  "basins_snapshot": {
+    "gin": {
+      "basin_id": "gin",
+      "name": "Gin Ganga",
+      "risk_level": "NORMAL",
+      "deep_convective_pct": 0.0,
+      "storm_coverage_pct": 0.0,
+      "rainfall_1h_mm": 2.1,
+      "rainfall_24h_mm": 18.0,
+      "gauges": []
+    },
+    "kalu": {
+      "basin_id": "kalu",
+      "name": "Kalu Ganga",
+      "risk_level": "NORMAL",
+      "deep_convective_pct": 5.0,
+      "storm_coverage_pct": 14.0,
+      "rainfall_1h_mm": 6.2,
+      "rainfall_24h_mm": 31.0,
+      "gauges": []
+    },
+    "kelani": {
+      "basin_id": "kelani",
+      "name": "Kelani Ganga",
+      "risk_level": "WATCH",
+      "deep_convective_pct": 18.0,
+      "storm_coverage_pct": 32.0,
+      "rainfall_1h_mm": 11.4,
+      "rainfall_24h_mm": 54.2,
+      "gauges": [
+        {
+          "station_id": "kitulgala",
+          "station_name": "Kitulgala",
+          "water_level_ft": 11.4,
+          "rate_of_rise_ft_hr": 0.18,
+          "trend": "RISING",
+          "status": "NORMAL"
+        }
+      ]
+    },
+    "nilwala": {
+      "basin_id": "nilwala",
+      "name": "Nilwala Ganga",
+      "risk_level": "NORMAL",
+      "deep_convective_pct": 0.0,
+      "storm_coverage_pct": 0.0,
+      "rainfall_1h_mm": 1.0,
+      "rainfall_24h_mm": 12.5,
+      "gauges": []
+    }
+  },
+  "reviewed_at": "2026-11-21T18:56:45.500410+00:00"
+}

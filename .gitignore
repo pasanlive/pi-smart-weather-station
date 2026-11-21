@@ -1,0 +1,35 @@
+# Environment
+.env
+backend/.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/
+
+# Runtime data
+data/frames/*.png
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
+# ML Pipeline generated datasets, calibration tensors & model binaries
+ml_pipeline/work/
+models/*.hef
+*.pt
+*.onnx
+*.har
+
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# OS / IDE
+.DS_Store
+*.swp
+.vscode/

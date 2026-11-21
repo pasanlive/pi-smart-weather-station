@@ -1,0 +1,16 @@
+import React from "react";
+import ReactDOM from "react-dom/client";
+import "leaflet/dist/leaflet.css";
+import "./styles/index.css";
+import App from "./App";
+
+// Conditionally polyfill native <input type="checkbox" switch> only when unsupported
+if (typeof HTMLInputElement !== "undefined" && !("switch" in HTMLInputElement.prototype)) {
+  void import("input-switch-polyfill");
+}
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);

@@ -1,0 +1,328 @@
+{
+  "sample_id": "20261121T180000Z_sensor_mismatch",
+  "frame_timestamp": "2026-11-21T18:00:00Z",
+  "captured_at": "2026-11-21T19:07:41.342261+00:00",
+  "trigger_type": "sensor_mismatch",
+  "trigger_detail": "Sensor Mismatch: Kalu Ganga",
+  "all_triggers": [
+    "sensor_mismatch"
+  ],
+  "status": "pending",
+  "model_filename": "cpu-fallback (storm_yolov8s_seg.hef unavailable)",
+  "inference_backend": "cpu-fallback",
+  "pseudo_label_source": "cpu_ir_fallback",
+  "confidences": [
+    0.686,
+    0.683,
+    0.691,
+    0.675,
+    0.641,
+    0.607,
+    0.582,
+    0.673,
+    0.693,
+    0.687,
+    0.712,
+    0.622,
+    0.653,
+    0.662,
+    0.617,
+    0.619,
+    0.581,
+    0.551,
+    0.605,
+    0.662,
+    0.585
+  ],
+  "min_confidence": 0.551,
+  "max_confidence": 0.712,
+  "detection_count": 21,
+  "low_conf_cells": [],
+  "mismatched_basins": [
+    {
+      "basin_id": "kalu",
+      "basin_name": "Kalu Ganga",
+      "rainfall_1h_mm": 0.0,
+      "heavy_rain": false,
+      "rising_gauges": [
+        {
+          "station_name": "Wey Ganga (Kahawaththa)",
+          "water_level_ft": 13.02,
+          "rate_of_rise_ft_hr": 0.848,
+          "status": "NORMAL"
+        }
+      ]
+    }
+  ],
+  "boundary_cells": [],
+  "basins_snapshot": {
+    "gin": {
+      "basin_id": "gin",
+      "name": "Gin Ganga",
+      "risk_level": "WATCH",
+      "deep_convective_pct": 0.0,
+      "storm_coverage_pct": 31.2,
+      "rainfall_1h_mm": 0.0,
+      "rainfall_24h_mm": 5.7,
+      "gauges": [
+        {
+          "station_id": "baddegama",
+          "station_name": "Baddegama",
+          "water_level_ft": 5.51,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "thawalama",
+          "station_name": "Thawalama",
+          "water_level_ft": 6.14,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        }
+      ]
+    },
+    "kalu": {
+      "basin_id": "kalu",
+      "name": "Kalu Ganga",
+      "risk_level": "WATCH",
+      "deep_convective_pct": 0.0,
+      "storm_coverage_pct": 80.3,
+      "rainfall_1h_mm": 0.0,
+      "rainfall_24h_mm": 1.4,
+      "gauges": [
+        {
+          "station_id": "denawaka_ganga_pelmadulla",
+          "station_name": "Denawaka Ganga (Pelmadulla)",
+          "water_level_ft": 6.0,
+          "rate_of_rise_ft_hr": -0.742,
+          "trend": "FALLING",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "ellagawa",
+          "station_name": "Ellagawa",
+          "water_level_ft": 18.37,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "galathura_oya_ayagama",
+          "station_name": "Galathura Oya (Ayagama)",
+          "water_level_ft": 3.22,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "kalawellawa_millakanda",
+          "station_name": "Kalawellawa (Millakanda)",
+          "water_level_ft": 11.09,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "kukule_ganga_kalawana",
+          "station_name": "Kukule Ganga (Kalawana)",
+          "water_level_ft": 11.98,
+          "rate_of_rise_ft_hr": -0.318,
+          "trend": "FALLING",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "kuru_ganga_kuruvita",
+          "station_name": "Kuru Ganga (Kuruvita)",
+          "water_level_ft": 3.77,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "magura",
+          "station_name": "Magura",
+          "water_level_ft": 5.38,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "niriella_ganga_elapatha",
+          "station_name": "Niriella Ganga (Elapatha)",
+          "water_level_ft": 6.5,
+          "rate_of_rise_ft_hr": -0.159,
+          "trend": "FALLING",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "putupaula",
+          "station_name": "Putupaula",
+          "water_level_ft": 3.05,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "ratnapura",
+          "station_name": "Ratnapura",
+          "water_level_ft": 5.81,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "wattala",
+          "station_name": "Wattala",
+          "water_level_ft": 8.43,
+          "rate_of_rise_ft_hr": 0.159,
+          "trend": "RISING",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "wey_ganga_kahawaththa",
+          "station_name": "Wey Ganga (Kahawaththa)",
+          "water_level_ft": 13.02,
+          "rate_of_rise_ft_hr": 0.848,
+          "trend": "RISING",
+          "status": "NORMAL"
+        }
+      ]
+    },
+    "kelani": {
+      "basin_id": "kelani",
+      "name": "Kelani Ganga",
+      "risk_level": "WATCH",
+      "deep_convective_pct": 0.0,
+      "storm_coverage_pct": 92.1,
+      "rainfall_1h_mm": 0.0,
+      "rainfall_24h_mm": 16.4,
+      "gauges": [
+        {
+          "station_id": "deraniyagala",
+          "station_name": "Deraniyagala",
+          "water_level_ft": 1.57,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "glencourse",
+          "station_name": "Glencourse",
+          "water_level_ft": 31.5,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "hanwella",
+          "station_name": "Hanwella",
+          "water_level_ft": 4.79,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "holombuwa",
+          "station_name": "Holombuwa",
+          "water_level_ft": 2.26,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "karawanella_bridge",
+          "station_name": "Karawanella Bridge",
+          "water_level_ft": 4.79,
+          "rate_of_rise_ft_hr": -0.318,
+          "trend": "FALLING",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "kithulgala",
+          "station_name": "Kithulgala",
+          "water_level_ft": 5.94,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "mapitigama",
+          "station_name": "Mapitigama",
+          "water_level_ft": 4.72,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "nagalagam_street",
+          "station_name": "Nagalagam Street",
+          "water_level_ft": 2.8,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "norwood",
+          "station_name": "Norwood",
+          "water_level_ft": 3.15,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "pugoda",
+          "station_name": "Pugoda",
+          "water_level_ft": 8.11,
+          "rate_of_rise_ft_hr": 0.159,
+          "trend": "RISING",
+          "status": "NORMAL"
+        }
+      ]
+    },
+    "nilwala": {
+      "basin_id": "nilwala",
+      "name": "Nilwala Ganga",
+      "risk_level": "NORMAL",
+      "deep_convective_pct": 0.0,
+      "storm_coverage_pct": 5.7,
+      "rainfall_1h_mm": 0.0,
+      "rainfall_24h_mm": 3.2,
+      "gauges": [
+        {
+          "station_id": "panadugama",
+          "station_name": "Panadugama",
+          "water_level_ft": 14.96,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "pitabeddara",
+          "station_name": "Pitabeddara",
+          "water_level_ft": 5.15,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "thalgahagoda",
+          "station_name": "Thalgahagoda",
+          "water_level_ft": 3.58,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        },
+        {
+          "station_id": "urawa",
+          "station_name": "Urawa",
+          "water_level_ft": 3.94,
+          "rate_of_rise_ft_hr": 0.0,
+          "trend": "STEADY",
+          "status": "NORMAL"
+        }
+      ]
+    }
+  }
+}

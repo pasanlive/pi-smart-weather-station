@@ -1,0 +1,72 @@
+{
+  "sample_id": "20261121T184500Z_boundary_artifact",
+  "frame_timestamp": "2026-11-21T18:45:00Z",
+  "captured_at": "2026-11-21T18:55:29.903752+00:00",
+  "trigger_type": "boundary_artifact",
+  "trigger_detail": "Boundary Artifact: 0.22",
+  "all_triggers": [
+    "boundary_artifact"
+  ],
+  "status": "rejected",
+  "model_filename": "storm_yolov8s_seg.hef",
+  "inference_backend": "hailo-8",
+  "pseudo_label_source": "model_raw",
+  "confidences": [
+    0.22
+  ],
+  "min_confidence": 0.22,
+  "max_confidence": 0.22,
+  "detection_count": 1,
+  "low_conf_cells": [],
+  "mismatched_basins": [],
+  "boundary_cells": [
+    {
+      "cell_id": "hailo_edge_1",
+      "label": "monsoon_shield",
+      "confidence": 0.22
+    }
+  ],
+  "basins_snapshot": {
+    "gin": {
+      "basin_id": "gin",
+      "name": "Gin Ganga",
+      "risk_level": "NORMAL",
+      "deep_convective_pct": 0.0,
+      "storm_coverage_pct": 8.0,
+      "rainfall_1h_mm": 4.2,
+      "rainfall_24h_mm": 22.0,
+      "gauges": []
+    },
+    "kalu": {
+      "basin_id": "kalu",
+      "name": "Kalu Ganga",
+      "risk_level": "NORMAL",
+      "deep_convective_pct": 0.0,
+      "storm_coverage_pct": 0.0,
+      "rainfall_1h_mm": 3.0,
+      "rainfall_24h_mm": 26.0,
+      "gauges": []
+    },
+    "kelani": {
+      "basin_id": "kelani",
+      "name": "Kelani Ganga",
+      "risk_level": "NORMAL",
+      "deep_convective_pct": 0.0,
+      "storm_coverage_pct": 0.0,
+      "rainfall_1h_mm": 1.8,
+      "rainfall_24h_mm": 14.0,
+      "gauges": []
+    },
+    "nilwala": {
+      "basin_id": "nilwala",
+      "name": "Nilwala Ganga",
+      "risk_level": "NORMAL",
+      "deep_convective_pct": 0.0,
+      "storm_coverage_pct": 0.0,
+      "rainfall_1h_mm": 2.4,
+      "rainfall_24h_mm": 16.0,
+      "gauges": []
+    }
+  },
+  "reviewed_at": "2026-11-21T18:56:45.501790+00:00"
+}

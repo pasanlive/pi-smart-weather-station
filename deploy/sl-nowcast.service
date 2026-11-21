@@ -1,0 +1,25 @@
+[Unit]
+Description=Sri Lanka Edge-Native Weather Nowcasting & Flood Prediction Service (Pi 5 + Hailo-8)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/opt/pi-smart-weather-station/backend
+EnvironmentFile=-/opt/pi-smart-weather-station/.env
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/opt/pi-smart-weather-station/backend/.venv/bin/uvicorn main:app --host ${APP_HOST:-0.0.0.0} --port ${APP_PORT:-8000} --workers 1
+Restart=always
+RestartSec=5
+MemoryMax=4G
+CPUQuota=300%
+
+# Hardening while preserving PCIe /dev/hailo0 access
+NoNewPrivileges=true
+PrivateTmp=true
+SupplementaryGroups=video
+
+[Install]
+WantedBy=multi-user.target
