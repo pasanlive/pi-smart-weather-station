@@ -2,13 +2,12 @@
 # Optional x86_64 Linux Helper Image for Step 5 (Hailo-8 INT8 .hef Compilation)
 #
 # Prerequisites:
-#   Download and load the official Hailo AI SW Suite Docker image (x86_64) from
-#   the Hailo Developer Zone (https://hailo.ai/developer-zone/software-downloads/),
-#   then pass its tag via `--build-arg BASE_IMAGE=<loaded_image_tag>`.
+#   Use an already-loaded Hailo AI SW Suite image (e.g. `yolox_hailo:v0` or
+#   `hailo_ai_sw_suite:<version>`) via `--build-arg BASE_IMAGE=<image:tag>`.
 #
 # Example build:
 #   docker build -f ml_pipeline/docker/Dockerfile.hailo_dfc \
-#     --build-arg BASE_IMAGE=hailo_ai_sw_suite:2025-01 \
+#     --build-arg BASE_IMAGE=yolox_hailo:v0 \
 #     -t sl-storm-hailo-dfc:latest ml_pipeline
 # =============================================================================
 
@@ -20,13 +19,47 @@ LABEL org.opencontainers.image.description="Compiles Himawari-9 YOLOv8s-seg ONNX
 
 WORKDIR /workspace/ml_pipeline
 
-# Install lightweight pipeline helpers into the active Hailo virtualenv without
-# overriding Hailo's pinned numpy/tensorflow/hailo_sdk_client dependencies.
-RUN python3 -m pip install --no-cache-dir \
-    PyYAML>=6.0.1 \
-    onnx>=1.16.0 \
-    onnxslim>=0.1.34 \
-    ultralytics>=8.3.0 --no-deps || true
+# Auto-detect whichever Python interpreter in the Hailo base image has `hailo_sdk_client`
+# (official Hailo AI SW Suite images place it in /local/workspace/hailo_virtualenv/bin/python3).
+RUN cat <<'EOF' > /usr/local/bin/hailo-python-entrypoint.sh
+#!/usr/bin/env bash
+set -euo pipefail
 
-ENTRYPOINT ["python3", "/workspace/ml_pipeline/5_compile_hailo8.py"]
-CMD ["--config", "/workspace/ml_pipeline/config.yaml", "--mode", "auto"]
+HAILO_PY=""
+for candidate in \
+  "/local/workspace/hailo_virtualenv/bin/python3" \
+  "${VIRTUAL_ENV:-}/bin/python3" \
+  "$(command -v python3 || true)" \
+  "/usr/bin/python3"; do
+  if [[ -n "${candidate}" && -x "${candidate}" ]]; then
+    if "${candidate}" -c "import hailo_sdk_client" >/dev/null 2>&1; then
+      HAILO_PY="${candidate}"
+      break
+    fi
+  fi
+done
+
+if [[ -z "${HAILO_PY}" ]]; then
+  echo "ERROR: Could not locate a Python interpreter with hailo_sdk_client installed." >&2
+  exit 1
+fi
+
+export PATH="$(dirname "${HAILO_PY}"):${PATH}"
+exec "${HAILO_PY}" /workspace/ml_pipeline/5_compile_hailo8.py "$@"
+EOF
+RUN chmod +x /usr/local/bin/hailo-python-entrypoint.sh
+
+# Ensure lightweight helper deps exist in the detected Hailo Python without overriding
+# Hailo's pinned numpy/tensorflow/hailo_sdk_client packages.
+RUN bash -lc '
+  for py in /local/workspace/hailo_virtualenv/bin/python3 "$(command -v python3 || true)"; do
+    if [[ -n "$py" && -x "$py" ]] && "$py" -c "import hailo_sdk_client" >/dev/null 2>&1; then
+      "$py" -c "import yaml" >/dev/null 2>&1 || "$py" -m pip install --no-cache-dir "PyYAML>=6.0.1"
+      "$py" -c "import onnx" >/dev/null 2>&1 || "$py" -m pip install --no-cache-dir "onnx>=1.16.0" --no-deps || true
+      break
+    fi
+  done
+'
+
+ENTRYPOINT ["/usr/local/bin/hailo-python-entrypoint.sh"]
+CMD ["--config", "/workspace/ml_pipeline/config.yaml", "--mode", "dfc"]
