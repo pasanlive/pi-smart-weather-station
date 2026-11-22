@@ -3,12 +3,14 @@ from __future__ import annotations
 from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
-StormClass = Literal["deep_convective", "cyclonic_band", "monsoon_shield"]
+StormClass = Literal["deep_convective", "storm_shield", "cyclonic_band", "monsoon_shield"]
 ThreatLevel = Literal["LOW", "MODERATE", "HIGH", "SEVERE"]
 BasinRiskLevel = Literal["NORMAL", "WATCH", "WARNING", "CRITICAL"]
 GaugeStatus = Literal["NORMAL", "ALERT", "MINOR_FLOOD", "MAJOR_FLOOD"]
 GaugeTrend = Literal["RISING", "STEADY", "FALLING"]
 HydrologySourceStatus = Literal["arcgis_live", "fallback", "stale", "unavailable"]
+AdvisorySource = Literal["ollama", "template", "template_fallback"]
+HazardType = Literal["rainfall", "thunderstorm", "high_wind"]
 ActiveLearningTrigger = Literal["low_conf", "sensor_mismatch", "boundary_artifact"]
 ActiveLearningStatus = Literal["pending", "approved", "rejected"]
 
@@ -75,6 +77,20 @@ class SurfaceStationTelemetry(BaseModel):
     observed_at: str = ""
 
 
+class HazardProbabilities(BaseModel):
+    rainfall_prob: int = Field(default=0, ge=0, le=100)
+    thunderstorm_prob: int = Field(default=0, ge=0, le=100)
+    high_wind_prob: int = Field(default=0, ge=0, le=100)
+    max_hazard_prob: int = Field(default=0, ge=0, le=100)
+    dominant_hazard: HazardType = "rainfall"
+    wind_speed_kmh: float = 0.0
+    wind_gusts_kmh: float = 0.0
+    cape_jkg: float = 0.0
+    weather_code: int = 0
+    wave_height_m: Optional[float] = None
+    exceeds_alert_threshold: bool = False
+
+
 class DistrictThreat(BaseModel):
     district_id: str
     name: str
@@ -88,6 +104,35 @@ class DistrictThreat(BaseModel):
     precipitation_mm: float = 0.0
     wind_gusts_kmh: float = 0.0
     pressure_drop_3h_hpa: float = 0.0
+    hazards: Optional[HazardProbabilities] = None
+
+
+class SeaZoneCoverage(BaseModel):
+    zone_id: str
+    name: str
+    eta_min: Optional[int] = None
+    coverage_by_horizon: dict[str, float] = Field(default_factory=dict)
+    deep_convective_by_horizon: dict[str, float] = Field(default_factory=dict)
+    storm_coverage_pct: float = 0.0
+    projected_60m_pct: float = 0.0
+    deep_convective_pct: float = 0.0
+    deep_convective_60m_pct: float = 0.0
+    peak_coverage_pct: float = 0.0
+
+
+class SeaZoneHazard(BaseModel):
+    zone_id: str
+    name: str
+    zone_type: Literal["sea_zone"] = "sea_zone"
+    centroid: list[float] = Field(default_factory=list)
+    eta_min: Optional[int] = None
+    storm_coverage_pct: float = 0.0
+    projected_60m_pct: float = 0.0
+    deep_convective_pct: float = 0.0
+    deep_convective_60m_pct: float = 0.0
+    peak_coverage_pct: float = 0.0
+    hazards: HazardProbabilities = Field(default_factory=HazardProbabilities)
+    geometry: dict[str, Any] = Field(default_factory=dict)
 
 
 class GaugeHistoryPoint(BaseModel):
@@ -173,6 +218,9 @@ class NowcastPayload(BaseModel):
     storm_cells_geojson: dict[str, Any] = Field(default_factory=lambda: {"type": "FeatureCollection", "features": []})
     projected_geojson: dict[str, dict[str, Any]] = Field(default_factory=dict)
     districts: list[DistrictThreat] = Field(default_factory=list)
+    sea_zones: list[SeaZoneHazard] = Field(default_factory=list)
+    sea_zones_geojson: dict[str, Any] = Field(default_factory=lambda: {"type": "FeatureCollection", "features": []})
+    hourly_digest_threshold_pct: int = 50
     river_basins: list[RiverBasinRisk] = Field(default_factory=list)
     river_basins_geojson: dict[str, Any] = Field(default_factory=lambda: {"type": "FeatureCollection", "features": []})
     gauges: list[RiverGaugeReading] = Field(default_factory=list)
@@ -181,7 +229,9 @@ class NowcastPayload(BaseModel):
     hydrology_last_updated: Optional[str] = None
     surface_stations: list[SurfaceStationTelemetry] = Field(default_factory=list)
     advisory_text: str = ""
-    advisory_source: str = "template"
+    advisory_source: AdvisorySource = "template"
+    advisory_model: Optional[str] = None
+    advisory_latency_ms: float = 0.0
 
 
 class GaugesResponse(BaseModel):
@@ -196,6 +246,8 @@ class SystemStatusResponse(BaseModel):
     inference_backend: str
     hailo_available: bool
     model_hef_exists: bool
+    model_hef_name: Optional[str] = None
+    model_hef_size_mb: Optional[float] = None
     last_inference_ms: float
     last_frame_timestamp: Optional[str] = None
     buffered_frames: int
@@ -260,3 +312,54 @@ class ActiveLearningDecisionRequest(BaseModel):
 class ActiveLearningDecisionResponse(BaseModel):
     sample: ActiveLearningSample
     stats: ActiveLearningStats
+
+
+class AlertStatusResponse(BaseModel):
+    telegram_enabled: bool
+    telegram_configured: bool
+    telegram_ready: bool
+    cooldown_min: int
+    hourly_summary_enabled: bool = True
+    hourly_summary_interval_min: int = 60
+    chat_id_masked: Optional[str] = None
+    last_dispatched_at: Optional[str] = None
+    last_status: Optional[str] = None
+    total_logged: int = 0
+
+
+class AlertHistoryItem(BaseModel):
+    id: int
+    entity_key: str
+    entity_type: str
+    zone_name: str
+    level: str
+    channel: str
+    status: str
+    caption_preview: str = ""
+    error: Optional[str] = None
+    sent_at: str
+
+
+class AlertHistoryResponse(BaseModel):
+    count: int
+    alerts: list[AlertHistoryItem] = Field(default_factory=list)
+
+
+class TelegramTestResponse(BaseModel):
+    ok: bool
+    status: str
+    detail: str
+    sent_at: Optional[str] = None
+    snapshot_bytes: int = 0
+
+
+class HourlyDigestTestResponse(BaseModel):
+    ok: bool
+    status: str
+    detail: str
+    threshold_pct: int = 50
+    qualifying_districts: list[dict[str, Any]] = Field(default_factory=list)
+    qualifying_sea_zones: list[dict[str, Any]] = Field(default_factory=list)
+    caption_preview: str = ""
+    sent_at: Optional[str] = None
+    snapshot_bytes: int = 0

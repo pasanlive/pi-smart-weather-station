@@ -22,9 +22,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     data_dir: str = str(REPO_ROOT / "data")
 
-    # Inference
-    inference_backend: Literal["auto", "hailo", "cpu"] = "auto"
+    # Inference (auto | hailo | yolo | cpu)
+    inference_backend: Literal["auto", "hailo", "yolo", "cpu"] = "auto"
     model_hef_path: str = str(REPO_ROOT / "models" / "storm_yolov8s_seg.hef")
+    model_pt_path: str = str(REPO_ROOT / "models" / "storm_yolov8s_seg.pt")
     confidence_threshold: float = 0.35
 
     # Himawari-9 Satellite Ingestion
@@ -43,13 +44,37 @@ class Settings(BaseSettings):
     irrigation_fallback_enabled: bool = True
     irrigation_fallback_url: str = "https://waterlevels.lk/api/levels"
 
-    # Optional Ollama local advisory summarizer
-    ollama_url: str = ""
-    ollama_model: str = "llama3.2:1b"
+    # Optional Local LLM Advisory Summarizer (CPU-pinned Ollama 3B)
+    ollama_enabled: bool = True
+    ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "qwen2.5:3b"
+    ollama_timeout_sec: float = 30.0
+    ollama_num_ctx: int = 2048
+    ollama_num_thread: int = 2
+    ollama_num_predict: int = 120
+    ollama_min_severity: str = "WATCH"
 
     # Optional Webhook Alerting
     alert_webhook_url: str = ""
     alert_cooldown_min: int = 30
+
+    # Telegram Bot Alert Integration
+    telegram_enabled: bool = True
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    telegram_alert_cooldown_min: int = 30
+    telegram_hourly_summary_enabled: bool = True
+    telegram_hourly_summary_interval_min: int = 60
+    hourly_digest_enabled: bool = True
+    hourly_alert_prob_threshold: int = 50
+
+    @property
+    def telegram_configured(self) -> bool:
+        return bool(
+            self.telegram_enabled
+            and self.telegram_bot_token.strip()
+            and self.telegram_chat_id.strip()
+        )
 
     # Active-Learning Data Flywheel
     al_enabled: bool = True
@@ -97,8 +122,26 @@ class Settings(BaseSettings):
         return BACKEND_DIR / "data" / "sri_lanka_flood_basins.geojson"
 
     @property
+    def sea_zones_geojson_path(self) -> Path:
+        return BACKEND_DIR / "data" / "sri_lanka_sea_zones.geojson"
+
+    @property
     def frontend_dist_path(self) -> Path:
         return REPO_ROOT / "frontend" / "dist"
+
+    @property
+    def model_hef_resolved_path(self) -> Path:
+        p = Path(self.model_hef_path)
+        if not p.is_absolute():
+            p = (REPO_ROOT / p).resolve()
+        return p
+
+    @property
+    def model_pt_resolved_path(self) -> Path:
+        p = Path(self.model_pt_path)
+        if not p.is_absolute():
+            p = (REPO_ROOT / p).resolve()
+        return p
 
 
 settings = Settings()

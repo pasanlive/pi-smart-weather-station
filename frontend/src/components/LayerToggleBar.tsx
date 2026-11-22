@@ -11,6 +11,7 @@ interface LayerToggleBarProps {
 const ITEMS: { key: keyof LayerVisibility; label: string; dot: string }[] = [
   { key: "satellite", label: "IR Loop", dot: "bg-slate-200" },
   { key: "districts", label: "Districts", dot: "bg-emerald-400" },
+  { key: "seaZones", label: "Sea Zones", dot: "bg-blue-400" },
   { key: "floodBasins", label: "Flood Basins", dot: "bg-sky-400" },
   { key: "riverGauges", label: "River Gauges", dot: "bg-teal-400" },
   { key: "stormMasks", label: "Storm Masks", dot: "bg-rose-400" },

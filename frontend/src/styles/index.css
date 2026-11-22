@@ -122,6 +122,14 @@ input[type="checkbox"][switch]:focus-visible {
   transform: rotate(180deg);
 }
 
+/* Dedicated resize handle affordance (applied only to handle so panel text stays selectable) */
+.panel-resize-handle {
+  cursor: col-resize;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 /* Dark Leaflet mission-control styling */
 .leaflet-container {
   background: #030712 !important;

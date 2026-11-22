@@ -85,7 +85,19 @@ IRRIGATION_POLL_INTERVAL_MIN=15
 IRRIGATION_FALLBACK_ENABLED=true
 ```
 
-### 4. Build Frontend & Enable `systemd` Service
+### 4. Optional Local Ollama 3B Advisory Generator (CPU-Pinned on Pi 5)
+Pin `ollama.service` to cores 2–3 (`Nice=10`, `MemoryMax=5G`) so LLM summaries never starve FastAPI, OpenCV, or HailoRT:
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen2.5:3b
+
+sudo mkdir -p /etc/systemd/system/ollama.service.d
+sudo cp /opt/pi-smart-weather-station/deploy/ollama-override.conf /etc/systemd/system/ollama.service.d/override.conf
+sudo systemctl daemon-reload
+sudo systemctl restart ollama.service
+```
+
+### 5. Build Frontend & Enable `systemd` Service
 FastAPI automatically serves `/frontend/dist` at `/` when built, so a single service runs everything on port `8000`:
 ```bash
 cd /opt/pi-smart-weather-station/frontend

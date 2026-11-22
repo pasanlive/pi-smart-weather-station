@@ -1,9 +1,26 @@
-export type StormClass = "deep_convective" | "cyclonic_band" | "monsoon_shield";
+export type StormClass = "deep_convective" | "storm_shield" | "cyclonic_band" | "monsoon_shield";
 export type ThreatLevel = "LOW" | "MODERATE" | "HIGH" | "SEVERE";
 export type BasinRiskLevel = "NORMAL" | "WATCH" | "WARNING" | "CRITICAL";
 export type GaugeStatus = "NORMAL" | "ALERT" | "MINOR_FLOOD" | "MAJOR_FLOOD";
 export type GaugeTrend = "RISING" | "STEADY" | "FALLING";
 export type HydrologySourceStatus = "arcgis_live" | "fallback" | "stale" | "unavailable";
+export type AdvisorySource = "ollama" | "template" | "template_fallback";
+export type HazardType = "rainfall" | "thunderstorm" | "high_wind";
+export type HazardMapMode = "combined" | "rainfall" | "thunderstorm" | "high_wind" | "threat";
+
+export interface HazardProbabilities {
+  rainfall_prob: number;
+  thunderstorm_prob: number;
+  high_wind_prob: number;
+  max_hazard_prob: number;
+  dominant_hazard: HazardType;
+  wind_speed_kmh: number;
+  wind_gusts_kmh: number;
+  cape_jkg: number;
+  weather_code: number;
+  wave_height_m: number | null;
+  exceeds_alert_threshold: boolean;
+}
 
 export interface FrameMetadata {
   timestamp: string;
@@ -54,6 +71,22 @@ export interface DistrictThreat {
   precipitation_mm: number;
   wind_gusts_kmh: number;
   pressure_drop_3h_hpa: number;
+  hazards?: HazardProbabilities | null;
+}
+
+export interface SeaZoneHazard {
+  zone_id: string;
+  name: string;
+  zone_type: "sea_zone";
+  centroid: [number, number];
+  eta_min: number | null;
+  storm_coverage_pct: number;
+  projected_60m_pct: number;
+  deep_convective_pct: number;
+  deep_convective_60m_pct: number;
+  peak_coverage_pct: number;
+  hazards: HazardProbabilities;
+  geometry: GeoJSON.Geometry;
 }
 
 export interface GaugeHistoryPoint {
@@ -131,6 +164,9 @@ export interface NowcastPayload {
   storm_cells_geojson: GeoJSON.FeatureCollection;
   projected_geojson: Record<string, GeoJSON.FeatureCollection>;
   districts: DistrictThreat[];
+  sea_zones: SeaZoneHazard[];
+  sea_zones_geojson: GeoJSON.FeatureCollection;
+  hourly_digest_threshold_pct: number;
   river_basins: RiverBasinRisk[];
   river_basins_geojson: GeoJSON.FeatureCollection;
   gauges: RiverGaugeReading[];
@@ -139,7 +175,9 @@ export interface NowcastPayload {
   hydrology_last_updated: string | null;
   surface_stations: SurfaceStationTelemetry[];
   advisory_text: string;
-  advisory_source: string;
+  advisory_source: AdvisorySource | string;
+  advisory_model?: string | null;
+  advisory_latency_ms?: number;
 }
 
 export interface SystemStatusResponse {
@@ -147,6 +185,8 @@ export interface SystemStatusResponse {
   inference_backend: string;
   hailo_available: boolean;
   model_hef_exists: boolean;
+  model_hef_name?: string | null;
+  model_hef_size_mb?: number | null;
   last_inference_ms: number;
   last_frame_timestamp: string | null;
   buffered_frames: number;
@@ -162,6 +202,7 @@ export interface SystemStatusResponse {
 export interface LayerVisibility {
   satellite: boolean;
   districts: boolean;
+  seaZones: boolean;
   floodBasins: boolean;
   riverGauges: boolean;
   stormMasks: boolean;
@@ -259,4 +300,74 @@ export interface ActiveLearningQueueResponse {
 export interface ActiveLearningDecisionResponse {
   sample: ActiveLearningSample;
   stats: ActiveLearningStats;
+}
+
+export interface AlertStatusResponse {
+  telegram_enabled: boolean;
+  telegram_configured: boolean;
+  telegram_ready: boolean;
+  cooldown_min: number;
+  hourly_summary_enabled: boolean;
+  hourly_summary_interval_min: number;
+  chat_id_masked: string | null;
+  last_dispatched_at: string | null;
+  last_status: string | null;
+  total_logged: number;
+}
+
+export interface AlertHistoryItem {
+  id: number;
+  entity_key: string;
+  entity_type: string;
+  zone_name: string;
+  level: string;
+  channel: string;
+  status: string;
+  caption_preview: string;
+  error: string | null;
+  sent_at: string;
+}
+
+export interface AlertHistoryResponse {
+  count: number;
+  alerts: AlertHistoryItem[];
+}
+
+export interface TelegramTestResponse {
+  ok: boolean;
+  status: string;
+  detail: string;
+  sent_at: string | null;
+  snapshot_bytes: number;
+}
+
+export interface HourlyDigestTestResponse {
+  ok: boolean;
+  status: string;
+  detail: string;
+  threshold_pct: number;
+  qualifying_districts: Array<{
+    zone_id: string;
+    name: string;
+    rainfall_prob: number;
+    thunderstorm_prob: number;
+    high_wind_prob: number;
+    max_hazard_prob: number;
+    dominant_hazard: HazardType;
+    wind_gusts_kmh: number;
+  }>;
+  qualifying_sea_zones: Array<{
+    zone_id: string;
+    name: string;
+    rainfall_prob: number;
+    thunderstorm_prob: number;
+    high_wind_prob: number;
+    max_hazard_prob: number;
+    dominant_hazard: HazardType;
+    wind_gusts_kmh: number;
+    wave_height_m: number | null;
+  }>;
+  caption_preview: string;
+  sent_at: string | null;
+  snapshot_bytes: number;
 }

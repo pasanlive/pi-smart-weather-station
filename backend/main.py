@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.active_learning import create_active_learning_router
+from api.alerts import create_alerts_router
 from api.routes import create_api_router
 from api.websocket import ConnectionManager
 from config import settings
@@ -58,12 +59,43 @@ async def lifespan(app: FastAPI):
         max_instances=1,
         coalesce=True,
     )
+    if settings.telegram_hourly_summary_enabled:
+        if settings.telegram_hourly_summary_interval_min == 60:
+            scheduler.add_job(
+                pipeline.send_telegram_hourly_summary,
+                trigger="cron",
+                minute=0,
+                id="telegram_hourly_summary",
+                max_instances=1,
+                coalesce=True,
+            )
+        else:
+            scheduler.add_job(
+                pipeline.send_telegram_hourly_summary,
+                trigger="interval",
+                minutes=max(1, settings.telegram_hourly_summary_interval_min),
+                id="telegram_hourly_summary",
+                max_instances=1,
+                coalesce=True,
+            )
+    if settings.hourly_digest_enabled:
+        scheduler.add_job(
+            pipeline.send_hourly_hazard_digest,
+            trigger="cron",
+            minute=0,
+            id="hourly_hazard_digest",
+            max_instances=1,
+            coalesce=True,
+        )
     scheduler.start()
     logger.info(
-        "Scheduler started: Himawari=%dm, Open-Meteo=%dm, Irrigation=%dm",
+        "Scheduler started: Himawari=%dm, Open-Meteo=%dm, Irrigation=%dm, TelegramSummary=%s, HourlyDigest=%s (>%d%%)",
         settings.satellite_poll_interval_min,
         settings.open_meteo_poll_interval_min,
         settings.irrigation_poll_interval_min,
+        f"{settings.telegram_hourly_summary_interval_min}m" if settings.telegram_hourly_summary_enabled else "off",
+        "on" if settings.hourly_digest_enabled else "off",
+        settings.hourly_alert_prob_threshold,
     )
 
     try:
@@ -90,6 +122,7 @@ app.add_middleware(
 
 app.include_router(create_api_router(pipeline, ws_manager))
 app.include_router(create_active_learning_router(pipeline.active_learning))
+app.include_router(create_alerts_router(pipeline))
 
 # Serve built React SPA on Raspberry Pi 5 when frontend/dist exists
 dist_dir = settings.frontend_dist_path

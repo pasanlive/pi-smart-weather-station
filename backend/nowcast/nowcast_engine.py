@@ -17,6 +17,7 @@ from models import (
     BasinZoneCoverage,
     DistrictThreat,
     ProjectedStormCell,
+    SeaZoneCoverage,
     StormDetection,
     SurfaceStationTelemetry,
     ThreatLevel,
@@ -71,6 +72,7 @@ class NowcastEngineOutput:
     projected_geojson: dict[str, dict[str, Any]]
     districts: list[DistrictThreat]
     basin_coverages: dict[str, BasinZoneCoverage]
+    sea_zone_coverages: dict[str, SeaZoneCoverage]
 
 
 class NowcastEngine:
@@ -78,7 +80,8 @@ class NowcastEngine:
     Optical flow trajectory & geospatial ETA projection engine.
     Tracks Himawari-9 storm detections via averaged Farneback optical flow across the
     last 2-3 buffered frames, projects storm polygons forward to +30/+60/+120 minutes,
-    and intersects horizon unions with Sri Lanka's 25 districts and 4 wet-zone river basins.
+    and intersects horizon unions with Sri Lanka's 25 districts, 4 wet-zone river basins,
+    and 8 coastal/offshore sea zones.
     """
 
     def __init__(
@@ -87,11 +90,15 @@ class NowcastEngine:
         basins_geojson_path: Path | str,
         bbox: tuple[float, float, float, float] = (75.0, 3.0, 86.0, 12.0),
         frame_size: tuple[int, int] = (640, 640),
+        sea_zones_geojson_path: Optional[Path | str] = None,
     ):
         self.bbox = bbox
         self.frame_width, self.frame_height = frame_size
         self.districts = self._load_zones(Path(districts_geojson_path), id_key="district_id")
         self.basins = self._load_zones(Path(basins_geojson_path), id_key="basin_id")
+        default_sea = Path(districts_geojson_path).parent / "sri_lanka_sea_zones.geojson"
+        sea_path = Path(sea_zones_geojson_path) if sea_zones_geojson_path else default_sea
+        self.sea_zones = self._load_zones(sea_path, id_key="zone_id") if sea_path.exists() else []
 
     @staticmethod
     def _load_zones(path: Path, id_key: str) -> list[_ZoneRecord]:
@@ -437,6 +444,53 @@ class NowcastEngine:
 
         return district_threats, basin_coverages
 
+    def _evaluate_sea_zones(
+        self,
+        horizon_polys: dict[int, list[tuple[str, Any]]],
+    ) -> dict[str, SeaZoneCoverage]:
+        """Intersects storm horizon unions (0m/+30m/+60m/+120m) against all 8 offshore sea zones."""
+        all_unions, deep_unions = self._build_horizon_unions(horizon_polys)
+        sea_coverages: dict[str, SeaZoneCoverage] = {}
+        for sz in self.sea_zones:
+            zone_area = sz.geom.area
+            cov_all: dict[str, float] = {}
+            cov_deep: dict[str, float] = {}
+            eta: Optional[int] = None
+
+            for hr in HORIZONS_MIN:
+                key = "0m" if hr == 0 else f"+{hr}m"
+                u_all = all_unions.get(hr)
+                u_deep = deep_unions.get(hr)
+                pct_all = (
+                    round(min(100.0, (sz.geom.intersection(u_all).area / zone_area) * 100.0), 1)
+                    if (u_all is not None and zone_area > 0)
+                    else 0.0
+                )
+                pct_deep = (
+                    round(min(100.0, (sz.geom.intersection(u_deep).area / zone_area) * 100.0), 1)
+                    if (u_deep is not None and zone_area > 0)
+                    else 0.0
+                )
+                cov_all[key] = pct_all
+                cov_deep[key] = pct_deep
+                if eta is None and pct_all >= ETA_COVERAGE_THRESHOLD_PCT:
+                    eta = hr
+
+            peak = max(cov_all.values()) if cov_all else 0.0
+            sea_coverages[sz.zone_id] = SeaZoneCoverage(
+                zone_id=sz.zone_id,
+                name=sz.name,
+                eta_min=eta,
+                coverage_by_horizon=cov_all,
+                deep_convective_by_horizon=cov_deep,
+                storm_coverage_pct=cov_all.get("0m", 0.0),
+                projected_60m_pct=cov_all.get("+60m", 0.0),
+                deep_convective_pct=cov_deep.get("0m", 0.0),
+                deep_convective_60m_pct=cov_deep.get("+60m", 0.0),
+                peak_coverage_pct=peak,
+            )
+        return sea_coverages
+
     def run(
         self,
         frames: list[np.ndarray] | list[tuple[str, np.ndarray]],
@@ -447,6 +501,7 @@ class NowcastEngine:
         mean_flow = self.compute_mean_flow(frames, default_dt_min=default_dt_min)
         projected_cells, horizon_polys = self.project_storms(detections, mean_flow)
         districts, basin_coverages = self._evaluate_zones(horizon_polys, surface_stations or [])
+        sea_zone_coverages = self._evaluate_sea_zones(horizon_polys)
 
         storm_features = [
             {
@@ -494,4 +549,5 @@ class NowcastEngine:
             projected_geojson=projected_geojson,
             districts=districts,
             basin_coverages=basin_coverages,
+            sea_zone_coverages=sea_zone_coverages,
         )

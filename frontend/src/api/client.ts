@@ -2,9 +2,13 @@ import type {
   ActiveLearningDecisionResponse,
   ActiveLearningQueueResponse,
   ActiveLearningStats,
+  AlertHistoryResponse,
+  AlertStatusResponse,
   FrameMetadata,
+  HourlyDigestTestResponse,
   NowcastPayload,
   SystemStatusResponse,
+  TelegramTestResponse,
 } from "../types/nowcast";
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -26,6 +30,7 @@ export const api = {
   getStatus: () => fetchJson<SystemStatusResponse>("/api/status"),
   getFrames: () => fetchJson<FrameMetadata[]>("/api/frames"),
   getDistrictsGeoJSON: () => fetchJson<GeoJSON.FeatureCollection>("/api/districts"),
+  getSeaZonesGeoJSON: () => fetchJson<GeoJSON.FeatureCollection>("/api/sea-zones"),
   getLatestNowcast: () => fetchJson<NowcastPayload>("/api/nowcast/latest"),
   refreshNowcast: () => fetchJson<NowcastPayload>("/api/nowcast/refresh", { method: "POST" }),
   getActiveLearningStats: () => fetchJson<ActiveLearningStats>("/api/active-learning/stats"),
@@ -46,6 +51,18 @@ export const api = {
       }
     ),
   getActiveLearningExportUrl: () => "/api/active-learning/export",
+  getAlertStatus: () => fetchJson<AlertStatusResponse>("/api/alerts/status"),
+  getAlertHistory: (limit = 10) =>
+    fetchJson<AlertHistoryResponse>(`/api/alerts/history?limit=${limit}`),
+  sendTelegramTestAlert: () =>
+    fetchJson<TelegramTestResponse>("/api/alerts/telegram/test", { method: "POST" }),
+  sendTelegramHourlySummary: () =>
+    fetchJson<TelegramTestResponse>("/api/alerts/telegram/summary", { method: "POST" }),
+  triggerHourlyDigestTest: (dispatch = true) =>
+    fetchJson<HourlyDigestTestResponse>(
+      `/api/alerts/hourly-digest/test?dispatch=${dispatch ? "true" : "false"}`,
+      { method: "POST" }
+    ),
 };
 
 export function createNowcastWebSocket(

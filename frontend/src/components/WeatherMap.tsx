@@ -5,8 +5,11 @@ import type {
   DistrictThreat,
   FrameMetadata,
   GaugeStatus,
+  HazardMapMode,
+  HazardProbabilities,
   LayerVisibility,
   NowcastPayload,
+  SeaZoneHazard,
   ThreatLevel,
 } from "../types/nowcast";
 import { renderGaugeSparklineSvg } from "./GaugeSparkline";
@@ -16,8 +19,10 @@ interface WeatherMapProps {
   activeFrameIndex: number;
   irOpacity: number;
   districtsGeoJson: GeoJSON.FeatureCollection | null;
+  seaZonesGeoJson: GeoJSON.FeatureCollection | null;
   nowcast: NowcastPayload | null;
   layers: LayerVisibility;
+  hazardMode: HazardMapMode;
   selectedDistrictId: string | null;
   selectedBasinId: string | null;
   onSelectDistrict: (id: string) => void;
@@ -53,6 +58,7 @@ const GAUGE_COLORS: Record<GaugeStatus, string> = {
 
 const STORM_COLORS: Record<string, string> = {
   deep_convective: "#f43f5e",
+  storm_shield: "#f59e0b",
   cyclonic_band: "#f59e0b",
   monsoon_shield: "#38bdf8",
 };
@@ -73,13 +79,95 @@ function formatAge(iso: string): string {
   }
 }
 
+function getHazardMetric(hazards: HazardProbabilities | null | undefined, mode: HazardMapMode): number {
+  if (!hazards) return 0;
+  switch (mode) {
+    case "rainfall":
+      return hazards.rainfall_prob;
+    case "thunderstorm":
+      return hazards.thunderstorm_prob;
+    case "high_wind":
+      return hazards.high_wind_prob;
+    case "combined":
+    default:
+      return hazards.max_hazard_prob;
+  }
+}
+
+function hazardColorRamp(prob: number, isSeaZone: boolean): { stroke: string; fill: string; fillOpacity: number } {
+  if (prob > 75) {
+    return { stroke: "#f43f5e", fill: "#ef4444", fillOpacity: isSeaZone ? 0.34 : 0.44 };
+  }
+  if (prob > 50) {
+    return { stroke: "#fb923c", fill: "#f97316", fillOpacity: isSeaZone ? 0.28 : 0.35 };
+  }
+  if (prob >= 30) {
+    return { stroke: "#facc15", fill: "#eab308", fillOpacity: isSeaZone ? 0.2 : 0.25 };
+  }
+  return {
+    stroke: isSeaZone ? "#38bdf8" : "#475569",
+    fill: isSeaZone ? "#0284c7" : "#334155",
+    fillOpacity: isSeaZone ? 0.06 : 0.08,
+  };
+}
+
+function buildHazardPopupHtml(
+  title: string,
+  subtitle: string,
+  hazards: HazardProbabilities | null | undefined,
+  thresholdPct: number
+): string {
+  if (!hazards) return `<div><strong>${title}</strong><br/>${subtitle}</div>`;
+  const alertBadge =
+    hazards.max_hazard_prob > thresholdPct
+      ? `<span style="padding:1px 6px;border-radius:4px;background:rgba(249,115,22,0.22);border:1px solid #f97316;color:#fdba74;font-family:monospace;font-size:10px;font-weight:700;">&gt;${thresholdPct}% ALERT</span>`
+      : `<span style="padding:1px 6px;border-radius:4px;background:rgba(16,185,129,0.16);border:1px solid #10b981;color:#6ee7b7;font-family:monospace;font-size:10px;">CALM</span>`;
+
+  const row = (label: string, val: number, color: string) => `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:3px 0;">
+      <span style="color:#cbd5e1;">${label}</span>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div style="width:68px;height:6px;background:#1e293b;border-radius:999px;overflow:hidden;">
+          <div style="width:${Math.min(100, val)}%;height:100%;background:${color};"></div>
+        </div>
+        <strong style="width:30px;text-align:right;font-family:monospace;color:#f8fafc;">${val}%</strong>
+      </div>
+    </div>
+  `;
+
+  return `
+    <div style="min-width:225px;font-size:11.5px;line-height:1.4;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px;">
+        <strong style="font-size:12.5px;color:#f8fafc;">${title}</strong>
+        ${alertBadge}
+      </div>
+      <div style="font-size:10.5px;color:#94a3b8;margin-bottom:6px;">${subtitle}</div>
+      <div style="background:#020617;padding:6px 8px;border-radius:6px;border:1px solid #1e293b;">
+        ${row("Rainfall", hazards.rainfall_prob, "#38bdf8")}
+        ${row("Thunderstorm", hazards.thunderstorm_prob, "#f43f5e")}
+        ${row("High Wind", hazards.high_wind_prob, "#fbbf24")}
+      </div>
+      <div style="margin-top:6px;display:flex;justify-content:space-between;font-family:monospace;font-size:10.5px;color:#cbd5e1;">
+        <span>Gusts: <strong>${hazards.wind_gusts_kmh.toFixed(0)} km/h</strong></span>
+        ${
+          hazards.wave_height_m !== null
+            ? `<span>Wave: <strong style="color:#38bdf8;">${hazards.wave_height_m.toFixed(2)} m</strong></span>`
+            : `<span>CAPE: <strong>${Math.round(hazards.cape_jkg)} J/kg</strong></span>`
+        }
+      </div>
+    </div>
+  `;
+}
+
 export function WeatherMap({
   frames,
   activeFrameIndex,
   irOpacity,
   districtsGeoJson,
+  seaZonesGeoJson,
   nowcast,
   layers,
+  hazardMode,
   selectedDistrictId,
   selectedBasinId,
   onSelectDistrict,
@@ -89,6 +177,7 @@ export function WeatherMap({
   const mapRef = useRef<L.Map | null>(null);
   const irOverlayRef = useRef<L.ImageOverlay | null>(null);
 
+  const seaZoneGroupRef = useRef<L.LayerGroup | null>(null);
   const districtGroupRef = useRef<L.LayerGroup | null>(null);
   const basinGroupRef = useRef<L.LayerGroup | null>(null);
   const stormGroupRef = useRef<L.LayerGroup | null>(null);
@@ -115,15 +204,21 @@ export function WeatherMap({
 
     L.control.zoom({ position: "topright" }).addTo(map);
 
-    // Lightweight dark CartoDB basemap ideal for Pi 5 rendering
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    // Lightweight dark CARTO basemap ideal for Pi 5 rendering (authenticated when VITE_CARTO_API_KEY is set)
+    const cartoApiKey = import.meta.env.VITE_CARTO_API_KEY?.trim();
+    const cartoTileUrl = cartoApiKey
+      ? `https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(cartoApiKey)}`
+      : "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png";
+
+    L.tileLayer(cartoTileUrl, {
       attribution: "&copy; OpenStreetMap &copy; CARTO | Himawari-9 NASA GIBS",
       subdomains: "abcd",
-      maxZoom: 19,
+      maxZoom: 20,
     }).addTo(map);
 
     // Ordered panes for clean visual layering
     map.createPane("irPane").style.zIndex = "250";
+    map.createPane("seaZonePane").style.zIndex = "320";
     map.createPane("districtPane").style.zIndex = "350";
     map.createPane("basinPane").style.zIndex = "380";
     map.createPane("trajectoryPane").style.zIndex = "420";
@@ -131,6 +226,7 @@ export function WeatherMap({
     map.createPane("vectorPane").style.zIndex = "500";
     map.createPane("markerPaneCustom").style.zIndex = "560";
 
+    seaZoneGroupRef.current = L.layerGroup().addTo(map);
     districtGroupRef.current = L.layerGroup().addTo(map);
     basinGroupRef.current = L.layerGroup().addTo(map);
     trajectoryGroupRef.current = L.layerGroup().addTo(map);
@@ -141,7 +237,14 @@ export function WeatherMap({
 
     mapRef.current = map;
 
+    // Keep Leaflet viewport synced cleanly whenever collapsible/resizable panels change width
+    const observer = new ResizeObserver(() => {
+      map.invalidateSize({ animate: false });
+    });
+    observer.observe(containerRef.current);
+
     return () => {
+      observer.disconnect();
       map.remove();
       mapRef.current = null;
     };
@@ -173,7 +276,7 @@ export function WeatherMap({
     }
   }, [frames, activeFrameIndex, irOpacity, layers.satellite]);
 
-  // 3. Sri Lanka 25-District choropleth layer
+  // 3. Sri Lanka 25-District choropleth layer (Hazard Probability Ramp OR Classic Threat Tier)
   useEffect(() => {
     const group = districtGroupRef.current;
     if (!group) return;
@@ -182,6 +285,7 @@ export function WeatherMap({
 
     if (!layers.districts || !districtsGeoJson) return;
 
+    const thresholdPct = nowcast?.hourly_digest_threshold_pct ?? 50;
     const threatById = new Map<string, DistrictThreat>();
     for (const d of nowcast?.districts ?? []) {
       threatById.set(d.district_id, d);
@@ -192,9 +296,21 @@ export function WeatherMap({
       style: (feature) => {
         const did = String(feature?.properties?.district_id ?? "");
         const threat = threatById.get(did);
+        const selected = did === selectedDistrictId;
+
+        if (hazardMode !== "threat" && threat?.hazards) {
+          const prob = getHazardMetric(threat.hazards, hazardMode);
+          const c = hazardColorRamp(prob, false);
+          return {
+            color: selected ? "#22d3ee" : c.stroke,
+            weight: selected ? 2.6 : 1.2,
+            fillColor: c.fill,
+            fillOpacity: selected ? Math.min(0.65, c.fillOpacity + 0.14) : c.fillOpacity,
+          };
+        }
+
         const lvl: ThreatLevel = threat?.threat_level ?? "LOW";
         const c = DISTRICT_COLORS[lvl];
-        const selected = did === selectedDistrictId;
         return {
           color: selected ? "#22d3ee" : c.stroke,
           weight: selected ? 2.5 : 1.1,
@@ -208,14 +324,95 @@ export function WeatherMap({
         const t = threatById.get(did);
         districtLayerMapRef.current.set(did, layer);
 
+        const hz = t?.hazards;
+        const alertTag =
+          hz && hz.max_hazard_prob > thresholdPct
+            ? ` <span style="color:#fb923c;font-weight:700;">[&gt;${thresholdPct}% ALERT]</span>`
+            : "";
+
         const tooltipHtml = t
-          ? `<div><strong>${name}</strong> • <span style="font-weight:700">${t.threat_level}</span><br/>ETA: ${formatEta(t.eta_min)} | Peak Cover: ${t.peak_coverage_pct.toFixed(0)}%<br/>Rain: ${t.precipitation_mm.toFixed(1)} mm | Gusts: ${t.wind_gusts_kmh.toFixed(0)} km/h</div>`
+          ? hz
+            ? `<div><strong>${name}</strong>${alertTag}<br/>Rain: ${hz.rainfall_prob}% | Storm: ${hz.thunderstorm_prob}% | Wind: ${hz.high_wind_prob}%<br/>Gusts: ${hz.wind_gusts_kmh.toFixed(0)} km/h | ETA: ${formatEta(t.eta_min)}</div>`
+            : `<div><strong>${name}</strong> • <span style="font-weight:700">${t.threat_level}</span><br/>ETA: ${formatEta(t.eta_min)} | Peak Cover: ${t.peak_coverage_pct.toFixed(0)}%<br/>Rain: ${t.precipitation_mm.toFixed(1)} mm | Gusts: ${t.wind_gusts_kmh.toFixed(0)} km/h</div>`
           : `<strong>${name}</strong>`;
         layer.bindTooltip(tooltipHtml, { sticky: true });
+        if (hz) {
+          layer.bindPopup(
+            buildHazardPopupHtml(
+              `${name} District`,
+              `Threat: ${t?.threat_level ?? "LOW"} • ETA: ${formatEta(t?.eta_min ?? null)}`,
+              hz,
+              thresholdPct
+            )
+          );
+        }
         layer.on("click", () => onSelectDistrict(did));
       },
     }).addTo(group);
-  }, [districtsGeoJson, nowcast?.districts, layers.districts, selectedDistrictId, onSelectDistrict]);
+  }, [districtsGeoJson, nowcast?.districts, nowcast?.hourly_digest_threshold_pct, layers.districts, hazardMode, selectedDistrictId, onSelectDistrict]);
+
+  // 3b. 8 Coastal & Offshore Sri Lanka Sea Zones (dashed borders so coastline stays crisp)
+  useEffect(() => {
+    const group = seaZoneGroupRef.current;
+    if (!group) return;
+    group.clearLayers();
+
+    const fc =
+      nowcast?.sea_zones_geojson?.features?.length
+        ? nowcast.sea_zones_geojson
+        : seaZonesGeoJson;
+    if (!layers.seaZones || !fc) return;
+
+    const thresholdPct = nowcast?.hourly_digest_threshold_pct ?? 50;
+    const seaById = new Map<string, SeaZoneHazard>();
+    for (const s of nowcast?.sea_zones ?? []) {
+      seaById.set(s.zone_id, s);
+    }
+
+    L.geoJSON(fc, {
+      pane: "seaZonePane",
+      style: (feature) => {
+        const zid = String(feature?.properties?.zone_id ?? "");
+        const sz = seaById.get(zid);
+        const hz = sz?.hazards ?? (feature?.properties?.hazards as HazardProbabilities | undefined);
+        const prob = getHazardMetric(hz, hazardMode === "threat" ? "combined" : hazardMode);
+        const c = hazardColorRamp(prob, true);
+        return {
+          color: c.stroke,
+          weight: prob > 50 ? 2 : 1.3,
+          dashArray: "6 5",
+          fillColor: c.fill,
+          fillOpacity: c.fillOpacity,
+        };
+      },
+      onEachFeature: (feature, layer) => {
+        const zid = String(feature?.properties?.zone_id ?? "");
+        const name = String(feature?.properties?.name ?? zid);
+        const sz = seaById.get(zid);
+        const hz = sz?.hazards ?? (feature?.properties?.hazards as HazardProbabilities | undefined);
+
+        const alertTag =
+          hz && hz.max_hazard_prob > thresholdPct
+            ? ` <span style="color:#fb923c;font-weight:700;">[&gt;${thresholdPct}% ALERT]</span>`
+            : "";
+
+        const tooltipHtml = hz
+          ? `<div><strong>🌊 ${name}</strong>${alertTag}<br/>Rain: ${hz.rainfall_prob}% | Storm: ${hz.thunderstorm_prob}% | Wind: ${hz.high_wind_prob}%<br/>Gusts: ${hz.wind_gusts_kmh.toFixed(0)} km/h${
+              hz.wave_height_m !== null ? ` | Wave: ${hz.wave_height_m.toFixed(2)} m` : ""
+            }</div>`
+          : `<strong>🌊 ${name}</strong>`;
+        layer.bindTooltip(tooltipHtml, { sticky: true });
+        layer.bindPopup(
+          buildHazardPopupHtml(
+            `🌊 ${name}`,
+            `Coastal / Offshore Marine Sector • Storm Cover: ${(sz?.storm_coverage_pct ?? 0).toFixed(0)}%`,
+            hz,
+            thresholdPct
+          )
+        );
+      },
+    }).addTo(group);
+  }, [seaZonesGeoJson, nowcast?.sea_zones, nowcast?.sea_zones_geojson, nowcast?.hourly_digest_threshold_pct, layers.seaZones, hazardMode]);
 
   // 4. Wet-Zone Flood Basins overlay (dashed borders, risk-colored fills, rich click popups)
   useEffect(() => {

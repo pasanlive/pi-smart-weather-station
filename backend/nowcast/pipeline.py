@@ -10,6 +10,8 @@ from typing import Any, Callable, Coroutine, Optional
 import psutil
 
 from active_learning.sampler import ActiveLearningSampler
+from alerts.hourly_digest import HourlyDigestDispatcher
+from alerts.telegram_notifier import TelegramAlertDispatcher
 from config import Settings
 from inference.cpu_detector import CPUIRStormDetector
 from inference.factory import create_storm_detector
@@ -18,9 +20,10 @@ from ingestion.himawari import HimawariPoller
 from ingestion.irrigation_arcgis import IrrigationArcGISPoller
 from ingestion.open_meteo import OpenMeteoPoller
 from models import NowcastPayload, SystemStatusResponse
-from nowcast.advisory import generate_advisory
+from nowcast.advisory_generator import WeatherAdvisoryGenerator
 from nowcast.alerting import AlertDispatcher
 from nowcast.basin_flood import BasinFloodAnalyzer
+from nowcast.hazard_probabilities import HazardProbabilityEngine
 from nowcast.nowcast_engine import NowcastEngine
 from storage.db import Database
 
@@ -66,11 +69,20 @@ class NowcastPipeline:
         self.nowcast_engine = NowcastEngine(
             districts_geojson_path=settings.districts_geojson_path,
             basins_geojson_path=settings.basins_geojson_path,
+            sea_zones_geojson_path=settings.sea_zones_geojson_path,
             bbox=settings.bbox_tuple,
             frame_size=(640, 640),
         )
+        self.hazard_engine = HazardProbabilityEngine(
+            districts_geojson_path=settings.districts_geojson_path,
+            sea_zones_geojson_path=settings.sea_zones_geojson_path,
+            alert_threshold_pct=settings.hourly_alert_prob_threshold,
+        )
         self.basin_analyzer = BasinFloodAnalyzer(settings.basins_geojson_path)
+        self.advisory_generator = WeatherAdvisoryGenerator(settings)
         self.alert_dispatcher = AlertDispatcher(settings, db)
+        self.telegram_dispatcher = TelegramAlertDispatcher(settings, db)
+        self.hourly_digest = HourlyDigestDispatcher(settings, db, self.telegram_dispatcher)
         self.active_learning = ActiveLearningSampler(
             settings=settings,
             db=db,
@@ -78,9 +90,12 @@ class NowcastPipeline:
         )
 
         self._lock = asyncio.Lock()
+        self._advisory_task: Optional[asyncio.Task[Any]] = None
+        self._run_seq: int = 0
         self.latest_payload: Optional[NowcastPayload] = None
         self.last_inference_ms: float = 0.0
         self.last_frame_timestamp: Optional[str] = None
+        self._last_detections: list[Any] = []
 
         # Restore persisted snapshot immediately if present in SQLite
         cached = self.db.get_latest_nowcast()
@@ -98,6 +113,7 @@ class NowcastPipeline:
         await asyncio.gather(
             self.himawari.backfill(self.settings.satellite_backfill_frames),
             self.open_meteo.poll(),
+            self.hazard_engine.poll(),
             self.irrigation.poll(),
             return_exceptions=True,
         )
@@ -108,7 +124,11 @@ class NowcastPipeline:
         return await self.run_nowcast()
 
     async def poll_open_meteo(self) -> None:
-        await self.open_meteo.poll()
+        await asyncio.gather(
+            self.open_meteo.poll(),
+            self.hazard_engine.poll(),
+            return_exceptions=True,
+        )
         if self.latest_payload is not None:
             await self.run_nowcast()
 
@@ -121,6 +141,7 @@ class NowcastPipeline:
         await asyncio.gather(
             self.himawari.poll_latest(),
             self.open_meteo.poll(),
+            self.hazard_engine.poll(),
             self.irrigation.poll(),
             return_exceptions=True,
         )
@@ -180,6 +201,12 @@ class NowcastPipeline:
                 stations,
             )
 
+            enriched_districts, sea_zones, sea_zones_geojson = self.hazard_engine.compute_hazard_probabilities(
+                districts=engine_out.districts,
+                sea_zone_coverages=engine_out.sea_zone_coverages,
+                alert_threshold_pct=self.settings.hourly_alert_prob_threshold,
+            )
+
             basins_list, basins_geojson, surge_warnings = self.basin_analyzer.analyze(
                 basin_coverages=engine_out.basin_coverages,
                 open_meteo_rainfall_24h=om_basin_rain,
@@ -204,18 +231,46 @@ class NowcastPipeline:
                 except Exception as al_exc:
                     logger.warning("Active learning capture hook failed (non-fatal): %s", al_exc)
 
-            advisory_text, advisory_source = await generate_advisory(
-                settings=self.settings,
+            # Instant zero-latency deterministic advisory so GET /api/nowcast/latest
+            # and CRITICAL Telegram alerts are NEVER blocked waiting on local Ollama LLM.
+            t_adv = time.perf_counter()
+            advisory_text = self.advisory_generator.generate_template_advisory(
                 storm_cells=engine_out.storm_cells,
                 districts=engine_out.districts,
                 basins=basins_list,
+                gauges=gauges_resp.stations,
                 surges=surge_warnings,
             )
+            advisory_source = "template"
+            advisory_latency_ms = round((time.perf_counter() - t_adv) * 1000.0, 2)
 
             await self.alert_dispatcher.dispatch_if_needed(
                 districts=engine_out.districts,
                 basins=basins_list,
             )
+
+            try:
+                await self.telegram_dispatcher.dispatch_nowcast_alerts(
+                    frame_bgr=latest_bgr,
+                    frame_timestamp=frame_ts,
+                    backend_name=backend_name,
+                    detections=detections,
+                    storm_cells=engine_out.storm_cells,
+                    districts=enriched_districts,
+                    basins=basins_list,
+                    basins_geojson=basins_geojson,
+                    gauges=gauges_resp.stations,
+                    advisory_text=advisory_text,
+                    ir_loop_frames=[img for _, img in recent_frames],
+                    sea_zones_geojson=sea_zones_geojson,
+                    projected_geojson=engine_out.projected_geojson,
+                )
+            except Exception as tg_exc:
+                logger.warning("Telegram alert dispatch hook failed (non-fatal): %s", tg_exc)
+
+            self._last_detections = detections
+            self._run_seq += 1
+            current_run_seq = self._run_seq
 
             payload = NowcastPayload(
                 generated_at=datetime.now(timezone.utc).isoformat(),
@@ -225,7 +280,10 @@ class NowcastPipeline:
                 storm_cells=engine_out.storm_cells,
                 storm_cells_geojson=engine_out.storm_cells_geojson,
                 projected_geojson=engine_out.projected_geojson,
-                districts=engine_out.districts,
+                districts=enriched_districts,
+                sea_zones=sea_zones,
+                sea_zones_geojson=sea_zones_geojson,
+                hourly_digest_threshold_pct=self.settings.hourly_alert_prob_threshold,
                 river_basins=basins_list,
                 river_basins_geojson=basins_geojson,
                 gauges=gauges_resp.stations,
@@ -235,6 +293,8 @@ class NowcastPipeline:
                 surface_stations=stations,
                 advisory_text=advisory_text,
                 advisory_source=advisory_source,
+                advisory_model=None,
+                advisory_latency_ms=advisory_latency_ms,
             )
 
             self.latest_payload = payload
@@ -251,6 +311,21 @@ class NowcastPipeline:
             if self.broadcast_cb is not None:
                 await self.broadcast_cb({"type": "nowcast_update", "payload": payload.model_dump()})
 
+            # Fire-and-forget local Ollama 3B refinement when severity >= OLLAMA_MIN_SEVERITY
+            if self.advisory_generator.should_invoke_llm(engine_out.districts, basins_list, surge_warnings):
+                if self._advisory_task is not None and not self._advisory_task.done():
+                    self._advisory_task.cancel()
+                self._advisory_task = asyncio.create_task(
+                    self._refine_advisory_async(
+                        run_seq=current_run_seq,
+                        storm_cells=engine_out.storm_cells,
+                        districts=engine_out.districts,
+                        basins=basins_list,
+                        gauges=gauges_resp.stations,
+                        surges=surge_warnings,
+                    )
+                )
+
             logger.info(
                 "Nowcast complete: frame=%s backend=%s latency=%.1fms cells=%d surges=%d hydrology=%s",
                 frame_ts,
@@ -262,15 +337,196 @@ class NowcastPipeline:
             )
             return payload
 
+    async def _refine_advisory_async(
+        self,
+        *,
+        run_seq: int,
+        storm_cells: list[Any],
+        districts: list[Any],
+        basins: list[Any],
+        gauges: list[Any],
+        surges: list[Any],
+    ) -> None:
+        """Runs local Ollama 3B asynchronously and broadcasts the refined advisory if still current."""
+        try:
+            result = await self.advisory_generator.generate_advisory(
+                storm_cells=storm_cells,
+                districts=districts,
+                basins=basins,
+                gauges=gauges,
+                surges=surges,
+            )
+            if run_seq != self._run_seq or self.latest_payload is None:
+                return
+            updated = self.latest_payload.model_copy(
+                update={
+                    "advisory_text": result.text,
+                    "advisory_source": result.source,
+                    "advisory_model": result.model,
+                    "advisory_latency_ms": result.latency_ms,
+                }
+            )
+            self.latest_payload = updated
+            self.db.save_nowcast_run(
+                frame_timestamp=updated.frame_timestamp,
+                backend_used=updated.inference_backend,
+                inference_ms=updated.inference_ms,
+                advisory_text=updated.advisory_text,
+                payload_dict=updated.model_dump(),
+            )
+            if self.broadcast_cb is not None:
+                await self.broadcast_cb({"type": "nowcast_update", "payload": updated.model_dump()})
+            logger.info(
+                "Async advisory refined: source=%s model=%s latency=%.1fms",
+                result.source,
+                result.model,
+                result.latency_ms,
+            )
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:
+            logger.warning("Background Ollama advisory task failed (non-fatal): %s", exc)
+
+    async def send_telegram_test_alert(self) -> dict[str, Any]:
+        """Renders a full-overlay snapshot from the latest buffered Himawari-9 IR loop and dispatches a [TEST ALERT]."""
+        recent_frames = self.himawari.load_recent_bgr_frames(count=3)
+        frame_ts: Optional[str] = None
+        latest_bgr = None
+        if recent_frames:
+            frame_ts, latest_bgr = recent_frames[-1]
+
+        payload = self.latest_payload
+        storm_cells = payload.storm_cells if payload else []
+        districts = payload.districts if payload else []
+        basins_geojson = (
+            payload.river_basins_geojson
+            if payload and payload.river_basins_geojson.get("features")
+            else self.basin_analyzer._raw_geojson
+        )
+        sea_zones_geojson = payload.sea_zones_geojson if payload else None
+        projected_geojson = payload.projected_geojson if payload else None
+        advisory_text = payload.advisory_text if payload else ""
+        detections = self._last_detections if self._last_detections else storm_cells
+
+        return await self.telegram_dispatcher.send_test_alert(
+            frame_bgr=latest_bgr,
+            frame_timestamp=frame_ts or (payload.frame_timestamp if payload else None),
+            backend_name=self.detector.backend_name,
+            detections=detections,
+            storm_cells=storm_cells,
+            basins_geojson=basins_geojson,
+            advisory_text=advisory_text,
+            ir_loop_frames=[img for _, img in recent_frames],
+            districts=districts,
+            sea_zones_geojson=sea_zones_geojson,
+            projected_geojson=projected_geojson,
+        )
+
+    async def send_telegram_hourly_summary(self) -> dict[str, Any]:
+        """Dispatches the scheduled or manual hourly Sri Lanka status summary photo to Telegram."""
+        if self.latest_payload is None:
+            await self.run_nowcast()
+
+        recent_frames = self.himawari.load_recent_bgr_frames(count=3)
+        frame_ts: Optional[str] = None
+        latest_bgr = None
+        if recent_frames:
+            frame_ts, latest_bgr = recent_frames[-1]
+
+        payload = self.latest_payload
+        storm_cells = payload.storm_cells if payload else []
+        districts = payload.districts if payload else []
+        basins = payload.river_basins if payload else []
+        surges = payload.upstream_surge_warning if payload else []
+        basins_geojson = (
+            payload.river_basins_geojson
+            if payload and payload.river_basins_geojson.get("features")
+            else self.basin_analyzer._raw_geojson
+        )
+        sea_zones_geojson = payload.sea_zones_geojson if payload else None
+        projected_geojson = payload.projected_geojson if payload else None
+        advisory_text = payload.advisory_text if payload else ""
+        hydrology_status = payload.hydrology_source_status if payload else self.irrigation.get_gauges_response().source_status
+        detections = self._last_detections if self._last_detections else storm_cells
+
+        return await self.telegram_dispatcher.send_hourly_summary(
+            frame_bgr=latest_bgr,
+            frame_timestamp=frame_ts or (payload.frame_timestamp if payload else None),
+            backend_name=self.detector.backend_name,
+            inference_ms=self.last_inference_ms,
+            detections=detections,
+            storm_cells=storm_cells,
+            districts=districts,
+            basins=basins,
+            basins_geojson=basins_geojson,
+            surges=surges,
+            hydrology_source_status=hydrology_status,
+            advisory_text=advisory_text,
+            ir_loop_frames=[img for _, img in recent_frames],
+            sea_zones_geojson=sea_zones_geojson,
+            projected_geojson=projected_geojson,
+        )
+
+    async def send_hourly_hazard_digest(
+        self,
+        *,
+        send_to_telegram: bool = True,
+        is_manual_test: bool = False,
+    ) -> dict[str, Any]:
+        """Dispatches (or previews) the hourly >50% district & sea-zone hazard probability digest."""
+        if self.latest_payload is None:
+            await self.run_nowcast()
+
+        recent_frames = self.himawari.load_recent_bgr_frames(count=3)
+        frame_ts: Optional[str] = None
+        latest_bgr = None
+        if recent_frames:
+            frame_ts, latest_bgr = recent_frames[-1]
+
+        payload = self.latest_payload
+        storm_cells = payload.storm_cells if payload else []
+        districts = payload.districts if payload else []
+        sea_zones = payload.sea_zones if payload else []
+        basins_geojson = (
+            payload.river_basins_geojson
+            if payload and payload.river_basins_geojson.get("features")
+            else self.basin_analyzer._raw_geojson
+        )
+        sea_zones_geojson = payload.sea_zones_geojson if payload else None
+        projected_geojson = payload.projected_geojson if payload else None
+        detections = self._last_detections if self._last_detections else storm_cells
+
+        return await self.hourly_digest.dispatch(
+            frame_bgr=latest_bgr,
+            frame_timestamp=frame_ts or (payload.frame_timestamp if payload else None),
+            backend_name=self.detector.backend_name,
+            detections=detections,
+            storm_cells=storm_cells,
+            districts=districts,
+            sea_zones=sea_zones,
+            basins_geojson=basins_geojson,
+            ir_loop_frames=[img for _, img in recent_frames],
+            sea_zones_geojson=sea_zones_geojson,
+            projected_geojson=projected_geojson,
+            threshold_pct=self.settings.hourly_alert_prob_threshold,
+            send_to_telegram=send_to_telegram,
+            is_manual_test=is_manual_test,
+        )
+
     def get_status(self) -> SystemStatusResponse:
         vm = psutil.virtual_memory()
         frames = self.himawari.get_buffered_frames()
         gauges_resp = self.irrigation.get_gauges_response()
+        hef_path = self.settings.model_hef_resolved_path
+        hef_exists = hef_path.exists()
+        hef_size_mb = round(hef_path.stat().st_size / (1024 * 1024), 2) if hef_exists else None
         return SystemStatusResponse(
             status="ok",
             inference_backend=self.detector.backend_name,
             hailo_available=is_hailo_available(),
-            model_hef_exists=Path(self.settings.model_hef_path).exists(),
+            model_hef_exists=hef_exists,
+            model_hef_name=hef_path.name if hef_exists else None,
+            model_hef_size_mb=hef_size_mb,
             last_inference_ms=self.last_inference_ms,
             last_frame_timestamp=self.last_frame_timestamp,
             buffered_frames=len(frames),

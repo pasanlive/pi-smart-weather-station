@@ -45,6 +45,13 @@ def create_api_router(pipeline: NowcastPipeline, ws_manager: ConnectionManager) 
             raise HTTPException(status_code=404, detail="Districts GeoJSON missing")
         return json.loads(path.read_text(encoding="utf-8"))
 
+    @router.get("/api/sea-zones")
+    async def get_sea_zones_geojson() -> dict[str, Any]:
+        path: Path = pipeline.settings.sea_zones_geojson_path
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="Sea zones GeoJSON missing")
+        return json.loads(path.read_text(encoding="utf-8"))
+
     @router.get("/api/gauges", response_model=GaugesResponse)
     async def get_gauges() -> GaugesResponse:
         return pipeline.irrigation.get_gauges_response()

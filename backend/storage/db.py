@@ -213,6 +213,86 @@ class Database:
             return None
         return datetime.fromisoformat(row["sent_at"])
 
+    def last_alert_record(
+        self,
+        entity_key: str,
+        only_sent: bool = False,
+    ) -> Optional[dict[str, Any]]:
+        query = """
+            SELECT id, entity_key, entity_type, level, sent_at, webhook_status, payload_json
+            FROM alert_history
+            WHERE entity_key = ?
+        """
+        if only_sent:
+            query += " AND webhook_status LIKE 'sent%'"
+        query += " ORDER BY sent_at DESC, id DESC LIMIT 1"
+        with self._lock, self._connect() as conn:
+            row = conn.execute(query, (entity_key,)).fetchone()
+        if not row:
+            return None
+        rec = dict(row)
+        try:
+            rec["payload"] = json.loads(rec.get("payload_json") or "{}")
+        except Exception:
+            rec["payload"] = {}
+        return rec
+
+    def list_alert_history(self, limit: int = 20) -> list[dict[str, Any]]:
+        safe_limit = max(1, min(100, int(limit)))
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, entity_key, entity_type, level, sent_at, webhook_status, payload_json
+                FROM alert_history
+                ORDER BY sent_at DESC, id DESC
+                LIMIT ?
+                """,
+                (safe_limit,),
+            ).fetchall()
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            item = dict(r)
+            try:
+                item["payload"] = json.loads(item.get("payload_json") or "{}")
+            except Exception:
+                item["payload"] = {}
+            out.append(item)
+        return out
+
+    def get_alert_summary(self, channel_prefix: Optional[str] = None) -> dict[str, Any]:
+        with self._lock, self._connect() as conn:
+            if channel_prefix:
+                like_pat = f"{channel_prefix}%"
+                total = conn.execute(
+                    "SELECT COUNT(*) AS cnt FROM alert_history WHERE entity_key LIKE ?",
+                    (like_pat,),
+                ).fetchone()["cnt"]
+                last_row = conn.execute(
+                    """
+                    SELECT sent_at, webhook_status
+                    FROM alert_history
+                    WHERE entity_key LIKE ?
+                    ORDER BY sent_at DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (like_pat,),
+                ).fetchone()
+            else:
+                total = conn.execute("SELECT COUNT(*) AS cnt FROM alert_history").fetchone()["cnt"]
+                last_row = conn.execute(
+                    """
+                    SELECT sent_at, webhook_status
+                    FROM alert_history
+                    ORDER BY sent_at DESC, id DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
+        return {
+            "total_logged": int(total or 0),
+            "last_dispatched_at": last_row["sent_at"] if last_row else None,
+            "last_status": last_row["webhook_status"] if last_row else None,
+        }
+
     def record_alert(
         self,
         entity_key: str,
