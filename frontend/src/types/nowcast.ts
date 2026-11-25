@@ -16,6 +16,8 @@ export interface HazardProbabilities {
   dominant_hazard: HazardType;
   wind_speed_kmh: number;
   wind_gusts_kmh: number;
+  wind_direction_deg?: number;
+  wind_compass_dir?: string;
   cape_jkg: number;
   weather_code: number;
   wave_height_m: number | null;

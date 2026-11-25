@@ -96,6 +96,7 @@ async def test_batched_open_meteo_33_centroids_and_clamping():
                         "weather_code": [95 if i == 1 else 3],  # test WMO 95 >= 80% thunderstorm floor
                         "wind_speed_10m": [25.0],
                         "wind_gusts_10m": [85.0 if i == 0 else 28.0],
+                        "wind_direction_10m": [85.0 if i == 0 else 225.0],
                     }
                 }
             )
@@ -106,6 +107,10 @@ async def test_batched_open_meteo_33_centroids_and_clamping():
 
     assert len(request_urls) == 2  # 1 Forecast batch + 1 Marine batch
     assert len(metrics) == 33
+    first_zone_id = engine.all_zone_points[0]["zone_id"]
+    second_zone_id = engine.all_zone_points[1]["zone_id"]
+    assert metrics[first_zone_id].wind_direction_deg == 85.0
+    assert metrics[second_zone_id].wind_direction_deg == 225.0
 
     # Check probability clamping & WMO thunderstorm override
     clamped = compute_zone_hazard_probabilities(

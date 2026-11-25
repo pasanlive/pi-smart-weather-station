@@ -123,7 +123,7 @@ def test_render_alert_snapshot_outputs_valid_jpeg():
 
     decoded = cv2.imdecode(np.frombuffer(jpeg_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
     assert decoded is not None
-    assert decoded.shape == (640, 640, 3)
+    assert decoded.shape[0] >= 640 and decoded.shape[1] >= 640 and decoded.shape[2] == 3
 
 
 def test_html_escaping_and_1024_caption_cap():

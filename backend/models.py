@@ -85,6 +85,8 @@ class HazardProbabilities(BaseModel):
     dominant_hazard: HazardType = "rainfall"
     wind_speed_kmh: float = 0.0
     wind_gusts_kmh: float = 0.0
+    wind_direction_deg: float = 0.0
+    wind_compass_dir: str = "N"
     cape_jkg: float = 0.0
     weather_code: int = 0
     wave_height_m: Optional[float] = None

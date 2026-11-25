@@ -33,7 +33,16 @@ class ZoneForecastMetrics:
     weather_code: int = 0
     wind_speed_kmh: float = 0.0
     wind_gusts_kmh: float = 0.0
+    wind_direction_deg: float = 0.0
     wave_height_m: Optional[float] = None
+
+
+_COMPASS_8 = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+
+
+def degrees_to_compass(deg: float) -> str:
+    idx = int(((float(deg) % 360.0) + 22.5) // 45.0) % 8
+    return _COMPASS_8[idx]
 
 
 def _clamp_pct(val: float) -> int:
@@ -63,6 +72,7 @@ def compute_zone_hazard_probabilities(
     weather_code: int,
     wind_speed_kmh: float,
     wind_gusts_kmh: float,
+    wind_direction_deg: float = 0.0,
     is_sea_zone: bool,
     wave_height_m: Optional[float] = None,
     alert_threshold_pct: int = 50,
@@ -93,6 +103,8 @@ def compute_zone_hazard_probabilities(
         dominant_hazard=dominant,
         wind_speed_kmh=round(float(wind_speed_kmh), 1),
         wind_gusts_kmh=round(float(wind_gusts_kmh), 1),
+        wind_direction_deg=round(float(wind_direction_deg) % 360.0, 1),
+        wind_compass_dir=degrees_to_compass(wind_direction_deg),
         cape_jkg=round(float(cape_jkg), 1),
         weather_code=int(weather_code),
         wave_height_m=round(float(wave_height_m), 2) if wave_height_m is not None else None,
@@ -222,6 +234,7 @@ class HazardProbabilityEngine:
                 weather_code=_window_weather_code(hourly.get("weather_code"), idx, hours=3),
                 wind_speed_kmh=_window_max(hourly.get("wind_speed_10m"), idx, hours=3),
                 wind_gusts_kmh=_window_max(hourly.get("wind_gusts_10m"), idx, hours=3),
+                wind_direction_deg=float((hourly.get("wind_direction_10m") or [0.0])[min(idx, max(0, len(hourly.get("wind_direction_10m") or [0.0]) - 1))] or 0.0),
             )
 
         if marine_payload is not None:
@@ -261,7 +274,7 @@ class HazardProbabilityEngine:
                 params={
                     "latitude": lats,
                     "longitude": lons,
-                    "hourly": "precipitation_probability,cape,weather_code,wind_speed_10m,wind_gusts_10m",
+                    "hourly": "precipitation_probability,cape,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m",
                     "forecast_days": 1,
                     "timezone": "UTC",
                 },
@@ -340,6 +353,7 @@ class HazardProbabilityEngine:
                 weather_code=m.weather_code,
                 wind_speed_kmh=m.wind_speed_kmh,
                 wind_gusts_kmh=m.wind_gusts_kmh or d.wind_gusts_kmh,
+                wind_direction_deg=m.wind_direction_deg,
                 is_sea_zone=False,
                 wave_height_m=None,
                 alert_threshold_pct=thresh,
@@ -367,6 +381,7 @@ class HazardProbabilityEngine:
                 weather_code=m.weather_code,
                 wind_speed_kmh=m.wind_speed_kmh,
                 wind_gusts_kmh=m.wind_gusts_kmh,
+                wind_direction_deg=m.wind_direction_deg,
                 is_sea_zone=True,
                 wave_height_m=m.wave_height_m,
                 alert_threshold_pct=thresh,
